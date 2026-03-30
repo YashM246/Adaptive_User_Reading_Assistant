@@ -1,10 +1,10 @@
-# AURA — Adaptive User Reading Assistant
+# AURA - Adaptive User Reading Assistant
 
-AURA is an intelligent reading assistant for academic research papers. It redesigns the static PDF reading experience by adapting to the user's reading goal and providing in-document AI assistance — without requiring the user to leave the document.
+AURA is an intelligent reading assistant for academic research papers. It redesigns the static PDF reading experience by adapting to the user's reading goal and providing in-document AI assistance - without requiring the user to leave the document.
 
 ## The Problem
 
-Current PDF readers (Adobe Acrobat, arXiv, Google Scholar) present every paper identically, regardless of why the user is reading. Users must manually decide what to read, what to skip, and how to interpret dense content. When they get stuck, they copy text into ChatGPT in a separate tab — breaking their reading flow entirely.
+Current PDF readers (Adobe Acrobat, arXiv, Google Scholar) present every paper identically, regardless of why the user is reading. Users must manually decide what to read, what to skip, and how to interpret dense content. When they get stuck, they copy text into ChatGPT in a separate tab - breaking their reading flow entirely.
 
 This problem is especially acute for **non-native English speaking graduate students and researchers**, who must simultaneously parse unfamiliar domain concepts and formal academic English register.
 
@@ -13,7 +13,7 @@ This problem is especially acute for **non-native English speaking graduate stud
 AURA adds two intelligent interactions on top of a working PDF reader:
 
 **1. Goal-Adaptive Reading Path**
-The user states their reading goal (e.g. "replicate this method", "skim for relevance", "get the big idea"). AURA generates a personalized reading path — a ranked, ordered list of the most relevant sections — with a rationale for each step. Relevant sections are highlighted in the document. The user reads at their own pace; the path is guidance, not a constraint.
+The user states their reading goal (e.g. "replicate this method", "skim for relevance", "get the big idea"). AURA generates a personalized reading path - a ranked, ordered list of the most relevant sections - with a rationale for each step. Relevant sections are highlighted in the document. The user reads at their own pace; the path is guidance, not a constraint.
 
 **2. Inline AI Explanation Panel**
 When the user selects any text in the document, an "Explain this" button appears. Clicking it opens a side panel with a plain-language explanation of the selected passage, grounded in the paper's own context. A "Where is this defined?" link navigates to the nearest prior definition of the selected term within the paper.
@@ -32,7 +32,7 @@ When the user selects any text in the document, an "Explain this" button appears
 
 ```
 aura/
-├── frontend/          # React app — forked from PaperCraft
+├── frontend/          # React app - forked from PaperCraft
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── GoalModal.jsx          # Goal-setting modal
@@ -63,4 +63,4 @@ See `Execution_Plan.md` for the full step-by-step setup and implementation guide
 - Nilakshi Nagrale (nagrale@usc.edu)
 - Husnain Qadri (hqadri@usc.edu)
 
-CSCI 599: Intelligent User Interactions — University of Southern California
+CSCI 599: Intelligent User Interactions - University of Southern California

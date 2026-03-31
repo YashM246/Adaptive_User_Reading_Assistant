@@ -1,66 +1,100 @@
-# AURA - Adaptive User Reading Assistant
+# Aura
 
-AURA is an intelligent reading assistant for academic research papers. It redesigns the static PDF reading experience by adapting to the user's reading goal and providing in-document AI assistance - without requiring the user to leave the document.
+**Aura** is a browser-based reading assistant for research PDFs. Choose *why* you are reading (skim, deep study, critique methods, extract contributions, replication, or a custom goal), follow an ordered path with on-page highlights, and use optional AI for explanations and document-grounded Q&amp;A.
 
-## The Problem
+---
 
-Current PDF readers (Adobe Acrobat, arXiv, Google Scholar) present every paper identically, regardless of why the user is reading. Users must manually decide what to read, what to skip, and how to interpret dense content. When they get stuck, they copy text into ChatGPT in a separate tab - breaking their reading flow entirely.
+## What it is
 
-This problem is especially acute for **non-native English speaking graduate students and researchers**, who must simultaneously parse unfamiliar domain concepts and formal academic English register.
+Aura is a **single-page web app** (React) with a **three-column layout**: reading goals and an editable step list on the left, the PDF in the center, and explanations plus questions on the right. The UI works **standalone**: PDF.js parses and renders the file in the browser, and a **local heuristic** can build a reading path from section structure even when the server is offline. With the **Python backend** running, Aura also uploads the PDF for structured parsing, refreshes the path using an LLM, and powers **Explain this** and **Ask about this paper** through a small REST API.
 
-## What AURA Does
+**Typical platforms:** macOS, Windows, or Linux with Node.js 18+ for the frontend; Python 3.10+ for the backend. Any **modern Chromium-, Firefox-, or Safari-class browser** is suitable for the reader.
 
-AURA adds two intelligent interactions on top of a working PDF reader:
+---
 
-**1. Goal-Adaptive Reading Path**
-The user states their reading goal (e.g. "replicate this method", "skim for relevance", "get the big idea"). AURA generates a personalized reading path - a ranked, ordered list of the most relevant sections - with a rationale for each step. Relevant sections are highlighted in the document. The user reads at their own pace; the path is guidance, not a constraint.
+## Features
 
-**2. Inline AI Explanation Panel**
-When the user selects any text in the document, an "Explain this" button appears. Clicking it opens a side panel with a plain-language explanation of the selected passage, grounded in the paper's own context. A "Where is this defined?" link navigates to the nearest prior definition of the selected term within the paper.
+| Area | What you get |
+|------|----------------|
+| **Goals & path** | Preset goals (skim, deep study, methods critique, big idea, replication) plus **Custom…** with free text. Steps show section titles and short *why read this* rationales; reorder by dragging. Highlights in the PDF reflect the path as **guidance**, not a lock-step mandate. |
+| **Explain this** | Select text in the PDF, click the floating control, and see a **plain-language** explanation with optional confidence; answers render as **Markdown**. Jump to **where a term is defined** earlier in the same paper. |
+| **Ask about this paper** | Separate bottom panel for **document-wide questions** answered from retrieved passages (`/api/query`). Independent from the selection flow so long answers can be dismissed without clearing your “Explain this” context. |
+| **Reading comfort** | Toolbar **zoom** (CSS `zoom` so layout stays centered), scrollable reader column sized to the window, **AI Assist** toggle, and a clear banner when the backend is unreachable. |
 
-## Tech Stack
+---
 
-| Layer | Technology |
-|-------|-----------|
-| Frontend | React (forked from PaperCraft by Allen AI) |
-| Backend | Python / Flask |
-| PDF Parsing | PaperMage (GROBID-based) |
-| LLM | OpenAI GPT-4.1 mini |
-| API | OpenAI API |
+## Libraries & stack
 
-## Project Structure
+### Frontend (`package.json`)
+
+| Package | Role |
+|---------|------|
+| [React](https://react.dev/) 19 | UI |
+| [TypeScript](https://www.typescriptlang.org/) | Typing |
+| [Vite](https://vitejs.dev/) 8 | Dev server, build, `/api` proxy |
+| [pdfjs-dist](https://github.com/mozilla/pdf.js) | PDF render, text layer, geometry for highlights and selection |
+| [react-markdown](https://github.com/remarkjs/react-markdown) | Markdown in explanation and Q&amp;A panels |
+
+**Tooling:** ESLint, `typescript-eslint`, `@vitejs/plugin-react`.
+
+### Backend (`backend/requirements.txt`)
+
+| Package | Role |
+|---------|------|
+| [Flask](https://flask.palletsprojects.com/) | HTTP API |
+| [flask-cors](https://flask-cors.readthedocs.io/) | CORS for the Vite dev origin |
+| [Groq](https://groq.com/) (`groq` SDK) | LLM calls (default model in `backend/config.py`, e.g. `openai/gpt-oss-120b`) |
+| [python-dotenv](https://github.com/theskumar/python-dotenv) | `.env` loading |
+| [Gunicorn](https://gunicorn.org/) | Production WSGI server |
+
+Optional / heavier: **PaperMage**, **PyTorch**, **sentence-transformers** for richer parsing and embeddings; the app **degrades gracefully** if they are not installed (simpler text extraction, no Specter2, etc.).
+
+---
+
+## Project layout (high level)
 
 ```
 aura/
-├── frontend/          # React app - forked from PaperCraft
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── GoalModal.jsx          # Goal-setting modal
-│   │   │   ├── ReadingPathPanel.jsx   # Path preview and step display
-│   │   │   ├── ExplanationPanel.jsx   # Inline AI explanation side panel
-│   │   │   └── AuraReader.jsx         # Main reader wrapper
-│   │   ├── hooks/
-│   │   │   ├── useGoalPath.js         # Goal + path generation logic
-│   │   │   └── useExplanation.js      # Text selection + explanation logic
-│   │   └── App.jsx
-├── backend/           # Flask API server
-│   ├── app.py                         # Main Flask app
-│   ├── parse.py                       # PaperMage PDF parsing
-│   ├── llm.py                         # GPT-4.1 mini calls
-│   └── requirements.txt
-└── README.md
+├── .env                 # GROQ_API_KEY, FLASK_* (at repo root of this app)
+├── index.html
+├── package.json
+├── vite.config.ts       # Dev proxy /api → Flask
+├── HOW_TO_RUN.md        # Install, env, run, troubleshooting
+├── public/favicon.svg
+├── src/                 # React app (App, panels, PDF views, API client)
+└── backend/             # Flask app, routes (parse, reading-path, explain, query), services
 ```
 
-## Setup
+---
 
-See `Execution_Plan.md` for the full step-by-step setup and implementation guide.
+## Quick start
 
-## Team
+Full steps (virtualenv, `.env`, two terminals, production notes) are in **[HOW_TO_RUN.md](./HOW_TO_RUN.md)**.
 
-- Yash Malode (malode@usc.edu)
-- Marina Lee (mhlee@usc.edu)
-- Julia Chun (jlchun@usc.edu)
-- Nilakshi Nagrale (nagrale@usc.edu)
-- Husnain Qadri (hqadri@usc.edu)
+```bash
+cd aura
+npm install
+# Terminal 1 — from aura/
+python -m backend.app
+# Terminal 2
+npm run dev
+```
 
-CSCI 599: Intelligent User Interactions - University of Southern California
+Open the URL Vite prints (usually `http://localhost:5173`).
+
+---
+
+## npm scripts
+
+| Command | Description |
+|--------|-------------|
+| `npm run dev` | Vite dev server with HMR |
+| `npm run build` | `tsc -b` + production bundle to `dist/` |
+| `npm run preview` | Serve the production build locally |
+| `npm run lint` | ESLint |
+
+---
+
+## License / course use
+
+Built for academic and personal use (e.g. course projects). Add a `LICENSE` file if you redistribute publicly.

@@ -1,0 +1,9 @@
+flask
+flask-cors
+groq
+papermage
+transformers
+torch
+sentence-transformers
+python-dotenv
+gunicorn

@@ -32,38 +32,6 @@ const GOAL_PROFILES: Record<ReadingGoal, GoalProfile> = {
       conclusion: 'Final synthesis and future directions.',
     },
   },
-  methods_critique: {
-    prioritySections: ['methods', 'experiments', 'results', 'limitations', 'abstract'],
-    keywords: ['baseline', 'ablation', 'metric', 'hyperparameter', 'architecture', 'evaluation', 'comparison', 'limitation', 'dataset', 'implementation'],
-    sectionRationales: {
-      methods: 'Examine the proposed approach for soundness and reproducibility.',
-      experiments: 'Check experimental design, baselines, and fair comparisons.',
-      results: 'Evaluate whether results support the claims convincingly.',
-      limitations: 'Understand acknowledged weaknesses and scope boundaries.',
-      abstract: 'Context for what claims are being made.',
-    },
-  },
-  extract_contributions: {
-    prioritySections: ['abstract', 'introduction', 'methods', 'conclusion'],
-    keywords: ['contribution', 'novel', 'propose', 'introduce', 'state-of-the-art', 'we present', 'our approach', 'main idea', 'we show'],
-    sectionRationales: {
-      abstract: 'Lists the paper\'s claimed contributions upfront.',
-      introduction: 'Details what is new and why it matters vs. prior work.',
-      methods: 'The technical substance of the contribution.',
-      conclusion: 'Restates contributions and their significance.',
-    },
-  },
-  implementation: {
-    prioritySections: ['methods', 'experiments', 'abstract', 'appendix', 'results'],
-    keywords: ['algorithm', 'pseudocode', 'architecture', 'training', 'optimizer', 'code', 'implementation', 'complexity', 'layer', 'model'],
-    sectionRationales: {
-      methods: 'Contains the algorithm, architecture, and implementation details.',
-      experiments: 'Training setup, hyperparameters, and computational requirements.',
-      abstract: 'High-level overview of what to implement.',
-      appendix: 'Additional details, proofs, or supplementary implementation notes.',
-      results: 'Performance benchmarks and expected outputs.',
-    },
-  },
   custom: {
     prioritySections: ['abstract', 'introduction', 'methods', 'results', 'conclusion'],
     keywords: ['contribution', 'method', 'result', 'experiment', 'approach', 'propose'],

@@ -12,7 +12,10 @@ function itemRect(
   const x = transform[4];
   const y = transform[5];
   const fontHeight = Math.hypot(transform[2], transform[3]) || 10;
-  const width = item.width * fontHeight;
+  const rd = viewport.rawDims as { pageWidth: number; pageHeight: number };
+  const pageW = rd.pageWidth || viewport.width;
+  // TextItem.width is in PDF user space (same units as page width). transform[4]/[5] are viewport pixels — scale width to match.
+  const width = item.width * (viewport.width / pageW);
   return {
     x,
     y: y - fontHeight,

@@ -6,6 +6,8 @@ export interface ReadingPathPanelProps {
   activeStepId: string | null;
   onJump: (span: TextSpan) => void;
   onReorder?: (steps: ReadingPathStep[]) => void;
+  loading?: boolean;
+  emptyMessage?: string;
 }
 
 export function ReadingPathPanel({
@@ -13,6 +15,8 @@ export function ReadingPathPanel({
   activeStepId,
   onJump,
   onReorder,
+  loading = false,
+  emptyMessage,
 }: ReadingPathPanelProps) {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const dragOverIndex = useRef<number | null>(null);
@@ -40,16 +44,33 @@ export function ReadingPathPanel({
     dragOverIndex.current = null;
   }, [dragIndex, steps, onReorder]);
 
+  if (loading && steps.length === 0) {
+    return (
+      <div className="path-panel path-panel-loading">
+        <div className="path-loading-inline" aria-live="polite">
+          <span className="path-spinner" />
+          <span>Building reading path…</span>
+        </div>
+      </div>
+    );
+  }
+
   if (steps.length === 0) {
     return (
       <div className="path-panel empty">
-        No path yet. Load a PDF and pick a reading goal.
+        {emptyMessage ?? 'No path yet. Load a PDF and pick a reading goal.'}
       </div>
     );
   }
 
   return (
-    <div className="path-panel">
+    <div className={`path-panel ${loading ? 'path-panel-dim' : ''}`}>
+      {loading && (
+        <div className="path-loading-banner" aria-live="polite">
+          <span className="path-spinner" />
+          <span>Updating path…</span>
+        </div>
+      )}
       <div className="path-list">
         {steps.map((s, i) => {
           const isActive = activeStepId === s.span.id;

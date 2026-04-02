@@ -179,10 +179,12 @@ export function PageView({
       >
         {pageHighlights.map((h) =>
           h.rects.map((rect, ri) => {
-            const clampedWidth = Math.min(
-              Math.max(rect.width, 4),
-              pageData.viewportWidth - rect.x
-            );
+            const clipLeft = Math.max(0, rect.x);
+            const clipRight = Math.min(pageData.viewportWidth, rect.x + rect.width);
+            if (clipRight <= clipLeft) {
+              return null;
+            }
+            const clampedWidth = Math.max(4, clipRight - clipLeft);
             return (
               <button
                 key={`${h.id}-${ri}`}
@@ -190,7 +192,7 @@ export function PageView({
                 className={`hl ${selectedId === h.id ? 'active' : ''}`}
                 style={{
                   position: 'absolute',
-                  left: Math.max(0, rect.x),
+                  left: clipLeft,
                   top: rect.y,
                   width: clampedWidth,
                   height: Math.max(rect.height, 4),

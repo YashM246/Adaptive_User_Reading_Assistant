@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import * as pdfjsLib from 'pdfjs-dist';
 import { PdfDocumentView } from './components/PdfDocumentView';
 import { ReadingPathPanel } from './components/ReadingPathPanel';
 import { ExplanationPanel } from './components/ExplanationPanel';
+import { ComparePdfView } from './components/ComparePdfView';
 import { setupPdfWorker } from './lib/pdf/setup';
 import { buildReadingPath } from './lib/retrieval/goalRetrieval';
 import { extractPdfStructure, spanFromCharRange } from './lib/structure/extractPdfStructure';
@@ -64,19 +65,20 @@ function applyServerReadingPath(
 const GOALS: { value: ReadingGoal; label: string; icon: string }[] = [
   { value: 'screening', label: 'Skim for relevance', icon: '⚡' },
   { value: 'study', label: 'Deep study', icon: '📖' },
-  { value: 'methods_critique', label: 'Critique methods', icon: '🔬' },
-  { value: 'extract_contributions', label: 'Get the big idea', icon: '💡' },
-  { value: 'implementation', label: 'Replicate this method', icon: '🔧' },
   { value: 'custom', label: 'Custom…', icon: '✏️' },
 ];
 
+type AppView = 'reader' | 'compare';
+
 function App() {
+  const [appView, setAppView] = useState<AppView>('reader');
   const [fileName, setFileName] = useState('');
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [structure, setStructure] = useState<Awaited<ReturnType<typeof extractPdfStructure>> | null>(null);
   const [docId, setDocId] = useState<string | null>(null);
   const [goal, setGoal] = useState<ReadingGoal>('screening');
-  const [customGoal, setCustomGoal] = useState('');
+  const [customGoalDraft, setCustomGoalDraft] = useState('');
+  const [customGoalApplied, setCustomGoalApplied] = useState('');
   const [steps, setSteps] = useState<ReadingPathStep[]>([]);
   const [highlights, setHighlights] = useState<TextSpan[]>([]);
   const [selectedSpan, setSelectedSpan] = useState<TextSpan | null>(null);
@@ -84,40 +86,62 @@ function App() {
   const [explainPopup, setExplainPopup] = useState<{ text: string; pageIndex: number; rect: Rect } | null>(null);
   const [loadState, setLoadState] = useState<'idle' | 'loading' | 'error'>('idle');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [pathLoading, setPathLoading] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(true);
   const [backendAvailable, setBackendAvailable] = useState(true);
   const [zoom, setZoom] = useState(1.0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!structure) return;
-    const customDesc = goal === 'custom' ? customGoal.trim() : undefined;
-    const path = buildReadingPath(
-      structure,
-      goal,
-      customDesc && customDesc.length > 0 ? customDesc : undefined,
-    );
-    setSteps(path.steps);
-    setHighlights(path.highlights);
-  }, [structure, goal, customGoal]);
+  const compareSeedFromReader = useMemo(() => {
+    if (!pdf || !structure) return null;
+    return { pdf, structure, fileName, docId };
+  }, [pdf, structure, fileName, docId]);
 
   useEffect(() => {
-    if (!docId || !aiEnabled || !structure) return;
-    const delay = goal === 'custom' ? 450 : 0;
-    const handle = window.setTimeout(() => {
-      api
-        .readingPath(docId, goal, goal === 'custom' ? customGoal.trim() || undefined : undefined)
-        .then((resp) => {
+    if (!structure) return;
+    if (goal === 'custom' && !customGoalApplied.trim()) {
+      return;
+    }
+
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPathLoading(true);
+
+    (async () => {
+      try {
+        if (docId && aiEnabled) {
+          const resp = await api.readingPath(
+            docId,
+            goal,
+            goal === 'custom' ? customGoalApplied.trim() : undefined,
+          );
           const merged = applyServerReadingPath(resp, structure);
           if (merged) {
+            if (cancelled) return;
             setSteps(merged.steps);
             setHighlights(merged.highlights);
+            setPathLoading(false);
+            return;
           }
-        })
-        .catch(() => {});
-    }, delay);
-    return () => clearTimeout(handle);
-  }, [docId, aiEnabled, structure, goal, customGoal]);
+        }
+      } catch {
+        /* fall back to local */
+      }
+      if (cancelled) return;
+      const path = buildReadingPath(
+        structure,
+        goal,
+        goal === 'custom' ? customGoalApplied.trim() : undefined,
+      );
+      setSteps(path.steps);
+      setHighlights(path.highlights);
+      setPathLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [structure, goal, customGoalApplied, docId, aiEnabled]);
 
   const loadPdfFile = useCallback(async (file: File) => {
     setLoadState('loading');
@@ -155,18 +179,27 @@ function App() {
       setPdf(null);
       setStructure(null);
     }
-  }, [goal, customGoal, aiEnabled]);
+  }, [aiEnabled]);
+
+  const applyCustomGoal = useCallback(() => {
+    const t = customGoalDraft.trim();
+    if (!t) return;
+    setCustomGoalApplied(t);
+  }, [customGoalDraft]);
 
   const onGoalChange = useCallback(
     (g: ReadingGoal) => {
       setGoal(g);
+      if (g === 'custom') {
+        setCustomGoalApplied('');
+      }
       if (structure) {
         setSelectedSpan(null);
         setSelectedText(null);
         setExplainPopup(null);
       }
     },
-    [structure]
+    [structure],
   );
 
   const jumpToSpan = useCallback(
@@ -174,7 +207,7 @@ function App() {
       setSelectedSpan(span);
       scrollToSpan(scrollRef.current, span);
     },
-    []
+    [],
   );
 
   const jumpToChar = useCallback(
@@ -188,7 +221,7 @@ function App() {
         scrollToSpan(scrollRef.current, span);
       }
     },
-    [structure]
+    [structure],
   );
 
   const onStepsReorder = useCallback((newSteps: ReadingPathStep[]) => {
@@ -229,78 +262,126 @@ function App() {
     setExplainPopup(null);
   }, []);
 
+  const pathEmptyMessage =
+    goal === 'custom' && !customGoalApplied.trim() && structure
+      ? 'Describe your goal below and click Apply goal (or press Enter).'
+      : undefined;
+
+  const customPending = goal === 'custom' && !customGoalApplied.trim();
+  const displaySteps = customPending ? [] : steps;
+  const displayHighlights = customPending ? [] : highlights;
+  const displayPathLoading = pathLoading && !customPending;
+
   return (
     <div className="app">
-      {/* Left panel */}
-      <aside className="left-panel">
-        <div className="brand-row">
-          <div className="brand-mark">A</div>
-          <div className="brand-text">
-            <h1>Aura</h1>
-            <p className="brand-tagline">Goal paths &middot; grounded explanations</p>
-          </div>
-        </div>
-
-        <div className="left-panel-body">
-          <p className="section-label">Your Reading Goal</p>
-          <div className="goal-chips">
-            {GOALS.map((g) => (
-              <button
-                key={g.value}
-                type="button"
-                className={`goal-chip ${goal === g.value ? 'active' : ''}`}
-                onClick={() => onGoalChange(g.value)}
-              >
-                <span className="goal-chip-icon">{g.icon}</span>
-                {g.label}
-              </button>
-            ))}
-          </div>
-
-          {goal === 'custom' && (
-            <div className="custom-goal-wrap">
-              <input
-                type="text"
-                className="custom-goal-input"
-                placeholder="e.g. focus on fairness metrics and evaluation"
-                value={customGoal}
-                onChange={(e) => setCustomGoal(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                }}
-              />
-              <p className="custom-goal-hint">
-                Your text is turned into search terms to rank sections. Press Enter or leave the field to refresh the path.
-              </p>
+      {appView === 'reader' && (
+        <aside className="left-panel">
+          <div className="brand-row">
+            <div className="brand-mark">A</div>
+            <div className="brand-text">
+              <h1>Aura</h1>
+              <p className="brand-tagline">Goal paths &middot; grounded explanations</p>
             </div>
-          )}
-
-          <div className="path-section-header">
-            <p className="section-label">Ordered Path</p>
-            <span className="path-edit-hint">Guidance, not a constraint</span>
           </div>
 
-          <ReadingPathPanel
-            steps={steps}
-            activeStepId={selectedSpan?.id ?? null}
-            onJump={jumpToSpan}
-            onReorder={onStepsReorder}
-          />
+          <div className="left-panel-body">
+            <p className="section-label">Your Reading Goal</p>
+            <div className="goal-chips">
+              {GOALS.map((g) => (
+                <button
+                  key={g.value}
+                  type="button"
+                  className={`goal-chip ${goal === g.value ? 'active' : ''}`}
+                  onClick={() => onGoalChange(g.value)}
+                >
+                  <span className="goal-chip-icon">{g.icon}</span>
+                  {g.label}
+                </button>
+              ))}
+            </div>
 
-          <label className="ai-toggle">
-            <input
-              type="checkbox"
-              checked={aiEnabled}
-              onChange={(e) => setAiEnabled(e.target.checked)}
-            />
-            <span className="ai-toggle-label">AI Assist</span>
-          </label>
-        </div>
-      </aside>
+            {goal === 'custom' && (
+              <div className="custom-goal-wrap">
+                <div className="custom-goal-row">
+                  <input
+                    type="text"
+                    className="custom-goal-input"
+                    placeholder="e.g. focus on fairness metrics and evaluation"
+                    value={customGoalDraft}
+                    onChange={(e) => setCustomGoalDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        applyCustomGoal();
+                      }
+                    }}
+                  />
+                  <button type="button" className="btn-apply-goal" onClick={applyCustomGoal}>
+                    Apply goal
+                  </button>
+                </div>
+                <p className="custom-goal-hint">
+                  Your text guides section ranking. Apply when ready — the path updates after you submit.
+                </p>
+              </div>
+            )}
 
-      {/* Center column */}
+            <div className="ordered-path-scroll">
+              <div className="path-section-header">
+                <p className="section-label">Ordered Path</p>
+                <span className="path-edit-hint">Guidance, not a constraint</span>
+              </div>
+
+              <ReadingPathPanel
+                steps={displaySteps}
+                activeStepId={selectedSpan?.id ?? null}
+                onJump={jumpToSpan}
+                onReorder={onStepsReorder}
+                loading={displayPathLoading}
+                emptyMessage={pathEmptyMessage}
+              />
+            </div>
+
+            <label className="ai-toggle">
+              <input
+                type="checkbox"
+                checked={aiEnabled}
+                onChange={(e) => setAiEnabled(e.target.checked)}
+              />
+              <span className="ai-toggle-label">AI Assist</span>
+            </label>
+          </div>
+        </aside>
+      )}
+
+      {appView === 'compare' && (
+        <aside className="left-panel compare-left-rail">
+          <div className="brand-row">
+            <div className="brand-mark">A</div>
+            <div className="brand-text">
+              <h1>Aura</h1>
+              <p className="brand-tagline">Compare PDFs</p>
+            </div>
+          </div>
+          <div className="left-panel-body compare-rail-body">
+            <p className="section-label">Mode</p>
+            <p className="compare-rail-copy">
+              Open two PDFs side by side. Enable sync scroll to move through both at once. AI Assist uses the backend for alignment hints when both files parse successfully.
+            </p>
+            <label className="ai-toggle">
+              <input
+                type="checkbox"
+                checked={aiEnabled}
+                onChange={(e) => setAiEnabled(e.target.checked)}
+              />
+              <span className="ai-toggle-label">AI Assist</span>
+            </label>
+          </div>
+        </aside>
+      )}
+
       <div className="center-column">
-        {!backendAvailable && aiEnabled && (
+        {!backendAvailable && aiEnabled && appView === 'reader' && (
           <div className="fallback-banner">
             Backend unavailable — using local parsing (AI features disabled).
             <button type="button" className="btn-link" onClick={() => setBackendAvailable(true)}>
@@ -311,16 +392,43 @@ function App() {
 
         <section className="toolbar">
           <div className="toolbar-left">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-            </svg>
-            <span className="toolbar-title">
-              {loadState === 'loading' ? 'Processing PDF…' : fileName || 'No file loaded'}
-            </span>
+            <div className="view-switch" role="tablist" aria-label="App view">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={appView === 'reader'}
+                className={`view-switch-btn ${appView === 'reader' ? 'active' : ''}`}
+                onClick={() => setAppView('reader')}
+              >
+                Reader
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={appView === 'compare'}
+                className={`view-switch-btn ${appView === 'compare' ? 'active' : ''}`}
+                onClick={() => setAppView('compare')}
+              >
+                Compare PDFs
+              </button>
+            </div>
+            {appView === 'reader' && (
+              <>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                  <polyline points="14 2 14 8 20 8" />
+                </svg>
+                <span className="toolbar-title">
+                  {loadState === 'loading' ? 'Processing PDF…' : fileName || 'No file loaded'}
+                </span>
+              </>
+            )}
+            {appView === 'compare' && (
+              <span className="toolbar-title">Side-by-side PDFs</span>
+            )}
           </div>
           <div className="toolbar-right">
-            {pdf && (
+            {appView === 'reader' && pdf && (
               <div className="zoom-controls">
                 <button
                   type="button"
@@ -352,87 +460,96 @@ function App() {
                 </button>
               </div>
             )}
-            <label className="file-input">
-              Open PDF
-              <input
-                type="file"
-                accept="application/pdf"
-                disabled={loadState === 'loading'}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  if (f) void loadPdfFile(f);
-                  e.target.value = '';
-                }}
-              />
-            </label>
+            {appView === 'reader' && (
+              <label className="file-input">
+                Open PDF
+                <input
+                  type="file"
+                  accept="application/pdf"
+                  disabled={loadState === 'loading'}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) void loadPdfFile(f);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+            )}
           </div>
         </section>
 
-        {loadState === 'error' && loadError && (
-          <div className="load-error-banner" role="alert">{loadError}</div>
-        )}
+        {appView === 'compare' ? (
+          <ComparePdfView aiEnabled={aiEnabled} initialLeftFromReader={compareSeedFromReader} />
+        ) : (
+          <>
+            {loadState === 'error' && loadError && (
+              <div className="load-error-banner" role="alert">{loadError}</div>
+            )}
 
-        <div className="reader-column" ref={scrollRef}>
-          {pdf && structure ? (
-            <div className="reader-pdf-stack">
-              <PdfDocumentView
-                pdf={pdf}
-                structure={structure}
-                highlights={highlights}
-                selectedId={selectedSpan?.id ?? null}
-                onHighlightClick={handleHighlightClick}
-                onTextSelect={handleTextSelect}
-                scrollRootRef={scrollRef}
-                zoom={zoom}
-              />
+            <div className="reader-column" ref={scrollRef}>
+              {pdf && structure ? (
+                <div className="reader-pdf-stack">
+                  <PdfDocumentView
+                    pdf={pdf}
+                    structure={structure}
+                    highlights={displayHighlights}
+                    selectedId={selectedSpan?.id ?? null}
+                    onHighlightClick={handleHighlightClick}
+                    onTextSelect={handleTextSelect}
+                    scrollRootRef={scrollRef}
+                    zoom={zoom}
+                  />
 
-              {explainPopup && (
-                <button
-                  type="button"
-                  className="explain-this-btn"
-                  style={{
-                    position: 'fixed',
-                    left: explainPopup.rect.x + explainPopup.rect.width / 2,
-                    top: explainPopup.rect.y + explainPopup.rect.height + 8,
-                    transform: 'translateX(-50%)',
-                  }}
-                  onClick={handleExplainClick}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
-                  </svg>
-                  Explain this
-                </button>
+                  {explainPopup && (
+                    <button
+                      type="button"
+                      className="explain-this-btn"
+                      style={{
+                        position: 'fixed',
+                        left: explainPopup.rect.x + explainPopup.rect.width / 2,
+                        top: explainPopup.rect.y + explainPopup.rect.height + 8,
+                        transform: 'translateX(-50%)',
+                      }}
+                      onClick={handleExplainClick}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z" />
+                      </svg>
+                      Explain this
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <div className="empty-state-icon">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                      <polyline points="14 2 14 8 20 8" />
+                    </svg>
+                  </div>
+                  <p>Open a research PDF to begin reading.</p>
+                </div>
               )}
             </div>
-          ) : (
-            <div className="empty-state">
-              <div className="empty-state-icon">
-                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-                  <polyline points="14 2 14 8 20 8" />
-                </svg>
-              </div>
-              <p>Open a research PDF to begin reading.</p>
-            </div>
-          )}
-        </div>
+          </>
+        )}
       </div>
 
-      {/* Right panel */}
-      <div className="right-panel">
-        <ExplanationPanel
-          structure={structure}
-          selectedText={selectedText}
-          docId={docId}
-          aiEnabled={aiEnabled}
-          onJumpToChar={jumpToChar}
-          onClose={() => {
-            setSelectedText(null);
-            setSelectedSpan(null);
-          }}
-        />
-      </div>
+      {appView === 'reader' && (
+        <div className="right-panel">
+          <ExplanationPanel
+            structure={structure}
+            selectedText={selectedText}
+            docId={docId}
+            aiEnabled={aiEnabled}
+            onJumpToChar={jumpToChar}
+            onClose={() => {
+              setSelectedText(null);
+              setSelectedSpan(null);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -74,6 +74,26 @@ export interface QueryResponse {
   confidence: number;
 }
 
+export interface CompareAlignedSection {
+  left_index: number;
+  right_index: number;
+  left_title: string;
+  right_title: string;
+  similarity: number;
+}
+
+export interface CompareDifference {
+  type: string;
+  description: string;
+  left_excerpt: string;
+  right_excerpt: string;
+}
+
+export interface CompareResponse {
+  aligned_sections: CompareAlignedSection[];
+  differences: CompareDifference[];
+}
+
 export const api = {
   parse(file: File): Promise<ParseResponse> {
     return upload('/api/parse', file);
@@ -99,5 +119,17 @@ export const api = {
 
   query(docId: string, question: string): Promise<QueryResponse> {
     return post('/api/query', { doc_id: docId, question });
+  },
+
+  compare(
+    docIdLeft: string,
+    docIdRight: string,
+    template: string = 'full_parallel',
+  ): Promise<CompareResponse> {
+    return post('/api/compare', {
+      doc_id_left: docIdLeft,
+      doc_id_right: docIdRight,
+      template,
+    });
   },
 };

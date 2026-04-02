@@ -1,10 +1,4 @@
-export type ReadingGoal =
-  | 'screening'
-  | 'study'
-  | 'methods_critique'
-  | 'extract_contributions'
-  | 'implementation'
-  | 'custom';
+export type ReadingGoal = 'screening' | 'study' | 'custom';
 
 export interface Rect {
   x: number;

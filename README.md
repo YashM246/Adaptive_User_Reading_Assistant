@@ -17,8 +17,8 @@ Aura is a **single-page web app** (React) with a **three-column layout**: readin
 | Area | What you get |
 |------|----------------|
 | **Goals & path** | Preset goals (skim, deep study, methods critique, big idea, replication) plus **Custom…** with free text. Steps show section titles and short *why read this* rationales; reorder by dragging. Highlights in the PDF reflect the path as **guidance**, not a lock-step mandate. |
-| **Explain this** | Select text in the PDF, click the floating control, and see a **plain-language** explanation with optional confidence; answers render as **Markdown**. Jump to **where a term is defined** earlier in the same paper. |
-| **Ask about this paper** | Separate bottom panel for **document-wide questions** answered from retrieved passages (`/api/query`). Independent from the selection flow so long answers can be dismissed without clearing your “Explain this” context. |
+| **Explain this** | Select text in the PDF, click the floating control, and see a **plain-language** explanation with optional confidence; answers render as **Markdown**. |
+| **Ask about this paper** | Separate bottom panel for **document-wide questions** grounded in parsed paper text (`/api/query`, length-capped for the model). Independent from the selection flow so long answers can be dismissed without clearing your “Explain this” context. |
 | **Reading comfort** | Toolbar **zoom** (CSS `zoom` so layout stays centered), scrollable reader column sized to the window, **AI Assist** toggle, and a clear banner when the backend is unreachable. |
 
 ---
@@ -62,7 +62,7 @@ aura/
 ├── HOW_TO_RUN.md        # Install, env, run, troubleshooting
 ├── public/favicon.svg
 ├── src/                 # React app (App, panels, PDF views, API client)
-└── backend/             # Flask app, routes (parse, reading-path, explain, query), services
+└── backend/             # Flask app, routes (parse, explain, query, compare, citation), services
 ```
 
 ---

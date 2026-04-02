@@ -1,6 +1,6 @@
 # Aura — How to Run
 
-Aura has two parts: a **React frontend** (Vite + TypeScript) and a **Flask backend** (Python). The frontend runs PDF text extraction and a **local** reading-path heuristic in the browser; the backend adds **parse** (structured document storage), **LLM reading path**, **Explain this**, and **Ask about this paper** (`/api/query`).
+Aura has two parts: a **React frontend** (Vite + TypeScript) and a **Flask backend** (Python). The frontend runs PDF text extraction and builds the **ordered reading path** entirely in the browser (`buildReadingPath` in `src/lib/readingPath/index.ts`) from detected section headings and your reading goal. The backend adds **parse** (structured document storage), **Explain this**, and **Ask about this paper** (`/api/query`).
 
 ---
 
@@ -112,15 +112,15 @@ Open your browser to the URL Vite prints.
 
 - **Left panel** — Brand, reading goal chips (including **Custom…** with a text field), ordered path steps (drag to reorder), AI Assist toggle.
 - **Center column** — Toolbar (filename, zoom, Open PDF), scrollable PDF viewer with goal highlights and text selection.
-- **Right panel** (sticky) — **Explanation** (select text → **Explain this** → quote + Markdown explanation + “Where is this defined?”), and **Ask about this paper** at the bottom (separate from Explain; uses `/api/query`).
+- **Right panel** (sticky) — **Explanation** (select text → **Explain this** → quote + Markdown explanation), and **Ask about this paper** at the bottom (separate from Explain; uses `/api/query`).
 
 ### Workflow
 
 1. **Open a PDF** — Use **Open PDF** in the toolbar.
-2. **Pick a reading goal** — Choose a preset or **Custom…**. For custom goals, type what you care about (e.g. “fairness and evaluation”); your words become extra keywords for ranking. The path updates as you type. **Press Enter** or finish editing the field to apply; the server reading path (if connected) uses the same text as `custom_goal`.
+2. **Pick a reading goal** — Choose a preset or **Custom…**. For custom goals, type what you care about; sections whose titles/previews match your words are preferred. **Press Enter** or **Apply goal** to apply.
 3. **Follow the path** — Click a step to jump; highlights are guidance only.
 4. **Explain this** — Select text in the PDF, click the floating button. The upper part of the right panel loads an explanation only for that selection (unchanged behavior).
-5. **Ask the paper** — Use the **Ask about this paper** box at the **bottom** of the right panel for questions; answers are based on retrieved paragraphs from the parsed document.
+5. **Ask the paper** — Use the **Ask about this paper** box at the **bottom** of the right panel for questions; answers are based on parsed paper text (length-capped for the LLM).
 6. **Zoom** — Minus / plus in the toolbar; zoom uses CSS `zoom` so the page stays centered.
 
 ### Running without the backend
@@ -128,11 +128,11 @@ Open your browser to the URL Vite prints.
 Without Flask, the app still:
 
 - Renders PDFs with **pdfjs-dist**
-- Builds a **local** reading path from sections/chunks and keywords (including **Custom** keywords from your text)
+- Builds the ordered path from PDF.js section detection and reading goals (same as with the backend)
 
 You will **not** get:
 
-- `/api/parse` storage, `/api/explain`, `/api/query`, or LLM **reading-path** refresh
+- `/api/parse` storage, `/api/explain`, or `/api/query`
 
 A yellow banner may appear when parse fails or the backend is down.
 
@@ -180,12 +180,12 @@ aura/
 │   ├── lib/
 │   │   ├── api/client.ts
 │   │   ├── pdf/setup.ts
-│   │   ├── retrieval/goalRetrieval.ts
+│   │   ├── readingPath/index.ts
 │   │   └── structure/
 │   └── types/aura.ts
 └── backend/
     ├── app.py
-    ├── routes/ parse, reading_path, explain, query (+ optional legacy routes)
+    ├── routes/ parse, explain, query, compare, citation
     └── services/
 ```
 
@@ -199,11 +199,10 @@ See `README.md` for the full technology list and feature description.
 | -------------------- | ------ | ----------- |
 | `/api/health`        | GET    | Health check |
 | `/api/parse`         | POST   | Upload PDF → `doc_id` + structured text for retrieval |
-| `/api/reading-path`  | POST   | LLM ordered path; body includes `goal` and optional `custom_goal` |
 | `/api/explain`       | POST   | Explanation for a selected passage + context |
 | `/api/query`         | POST   | Free-form question; backend retrieves relevant paragraphs |
 
-Additional routes (`checkpoints`, `compare`, `citation`) may exist for other tooling; the streamlined Aura UI focuses on the table above.
+Additional routes (`compare`, `citation`) support **Compare PDFs** and other tooling.
 
 ---
 

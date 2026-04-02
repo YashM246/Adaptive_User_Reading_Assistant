@@ -6,61 +6,14 @@ import { ReadingPathPanel } from './components/ReadingPathPanel';
 import { ExplanationPanel } from './components/ExplanationPanel';
 import { ComparePdfView } from './components/ComparePdfView';
 import { setupPdfWorker } from './lib/pdf/setup';
-import { buildReadingPath } from './lib/retrieval/goalRetrieval';
-import { extractPdfStructure, spanFromCharRange } from './lib/structure/extractPdfStructure';
+import { buildReadingPath } from './lib/readingPath';
+import { extractPdfStructure } from './lib/structure/extractPdfStructure';
 import { scrollToSpan } from './lib/ui/scrollToSpan';
 import { api } from './lib/api/client';
 import type { ReadingGoal, ReadingPathStep, Rect, TextSpan } from './types/aura';
-import type { ReadingPathResponse } from './lib/api/client';
 import './App.css';
 
 setupPdfWorker();
-
-function applyServerReadingPath(
-  resp: ReadingPathResponse,
-  struct: Awaited<ReturnType<typeof extractPdfStructure>>,
-): { steps: ReadingPathStep[]; highlights: TextSpan[] } | null {
-  if (!resp.steps?.length) return null;
-  const serverSteps: ReadingPathStep[] = resp.steps
-    .map((s, i) => {
-      const section = struct.sections[s.section_index];
-      const span = section
-        ? spanFromCharRange(
-          struct,
-          section.startCharGlobal,
-          Math.min(section.startCharGlobal + 500, section.endCharGlobal),
-          `srv-${i}`,
-        )
-        : null;
-      return {
-        order: i,
-        sectionTitle: s.section_title,
-        rationale: s.rationale,
-        priority: s.priority,
-        span: span ?? { id: `srv-${i}`, pageIndex: 0, rects: [], text: '' },
-      };
-    })
-    .filter((s) => s.span.rects.length > 0);
-  if (serverSteps.length === 0) return null;
-  const serverHighlights: TextSpan[] = [];
-  for (const s of serverSteps) {
-    const section = struct.sections.find((sec) => sec.title === s.sectionTitle);
-    if (section) {
-      const hl = spanFromCharRange(
-        struct,
-        section.startCharGlobal,
-        section.endCharGlobal,
-        `srv-hl-${s.order}`,
-      );
-      if (hl) serverHighlights.push(hl);
-    }
-  }
-  const highlights =
-    serverHighlights.length > 0
-      ? serverHighlights
-      : serverSteps.map((s, i) => ({ ...s.span, id: `srv-hl-${i}` }));
-  return { steps: serverSteps, highlights };
-}
 
 const GOALS: { value: ReadingGoal; label: string; icon: string }[] = [
   { value: 'screening', label: 'Skim for relevance', icon: '⚡' },
@@ -103,45 +56,17 @@ function App() {
       return;
     }
 
-    let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setPathLoading(true);
-
-    (async () => {
-      try {
-        if (docId && aiEnabled) {
-          const resp = await api.readingPath(
-            docId,
-            goal,
-            goal === 'custom' ? customGoalApplied.trim() : undefined,
-          );
-          const merged = applyServerReadingPath(resp, structure);
-          if (merged) {
-            if (cancelled) return;
-            setSteps(merged.steps);
-            setHighlights(merged.highlights);
-            setPathLoading(false);
-            return;
-          }
-        }
-      } catch {
-        /* fall back to local */
-      }
-      if (cancelled) return;
-      const path = buildReadingPath(
-        structure,
-        goal,
-        goal === 'custom' ? customGoalApplied.trim() : undefined,
-      );
-      setSteps(path.steps);
-      setHighlights(path.highlights);
-      setPathLoading(false);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [structure, goal, customGoalApplied, docId, aiEnabled]);
+    const path = buildReadingPath(
+      structure,
+      goal,
+      goal === 'custom' ? customGoalApplied.trim() : undefined,
+    );
+    setSteps(path.steps);
+    setHighlights(path.highlights);
+    setPathLoading(false);
+  }, [structure, goal, customGoalApplied]);
 
   const loadPdfFile = useCallback(async (file: File) => {
     setLoadState('loading');
@@ -154,18 +79,20 @@ function App() {
       const struct = await extractPdfStructure(doc);
       setPdf(doc);
       setStructure(struct);
+      // Prevent using a stale doc_id after loading a new file.
+      setDocId(null);
 
-      let parsedDocId: string | null = null;
       if (aiEnabled) {
         try {
           const parsed = await api.parse(file);
-          parsedDocId = parsed.doc_id;
-          setDocId(parsedDocId);
+          setDocId(parsed.doc_id);
           setBackendAvailable(true);
         } catch {
           setDocId(null);
           setBackendAvailable(false);
         }
+      } else {
+        setDocId(null);
       }
 
       setSelectedSpan(null);
@@ -208,20 +135,6 @@ function App() {
       scrollToSpan(scrollRef.current, span);
     },
     [],
-  );
-
-  const jumpToChar = useCallback(
-    (offset: number) => {
-      if (!structure) return;
-      const span = spanFromCharRange(
-        structure, offset, Math.min(offset + 1, structure.fullText.length), 'def-jump'
-      );
-      if (span) {
-        setSelectedSpan(span);
-        scrollToSpan(scrollRef.current, span);
-      }
-    },
-    [structure],
   );
 
   const onStepsReorder = useCallback((newSteps: ReadingPathStep[]) => {
@@ -321,7 +234,7 @@ function App() {
                   </button>
                 </div>
                 <p className="custom-goal-hint">
-                  Your text guides section ranking. Apply when ready — the path updates after you submit.
+                  Apply when ready — sections matching your words are preferred; otherwise common methods/results blocks are used.
                 </p>
               </div>
             )}
@@ -340,6 +253,7 @@ function App() {
                 loading={displayPathLoading}
                 emptyMessage={pathEmptyMessage}
               />
+              <p className="path-local-hint">Path from PDF text structure in your browser.</p>
             </div>
 
             <label className="ai-toggle">
@@ -542,7 +456,6 @@ function App() {
             selectedText={selectedText}
             docId={docId}
             aiEnabled={aiEnabled}
-            onJumpToChar={jumpToChar}
             onClose={() => {
               setSelectedText(null);
               setSelectedSpan(null);

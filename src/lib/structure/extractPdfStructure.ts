@@ -177,29 +177,38 @@ export async function extractPdfStructure(
 }
 
 /**
- * Build a TextSpan for a character range. Returns per-line rects so
- * highlights follow individual text lines rather than covering the
- * entire bounding region.
+ * Find the page index where `charPos` falls.
+ */
+function pageForChar(pageCharOffsets: number[], charPos: number): number {
+  for (let i = pageCharOffsets.length - 1; i >= 0; i--) {
+    if (charPos >= pageCharOffsets[i]) return i;
+  }
+  return 0;
+}
+
+/**
+ * Build a TextSpan for a character range on its starting page.
+ * Returns per-line rects so highlights follow individual text lines
+ * rather than covering the entire bounding region.
  */
 export function spanFromCharRange(
   structure: DocumentStructure,
   start: number,
   end: number,
-  id: string
+  id: string,
 ): TextSpan | null {
   const { pages, pageCharOffsets, fullText } = structure;
-  let pageIndex = 0;
-  for (let i = pageCharOffsets.length - 1; i >= 0; i--) {
-    if (start >= pageCharOffsets[i]) {
-      pageIndex = i;
-      break;
-    }
-  }
+  const pageIndex = pageForChar(pageCharOffsets, start);
   const page = pages[pageIndex];
+  if (!page) return null;
+
   const matchedRects: Rect[] = [];
   for (const it of page.items) {
     const overlap =
-      Math.max(0, Math.min(end, it.globalCharEnd) - Math.max(start, it.globalCharStart));
+      Math.max(
+        0,
+        Math.min(end, it.globalCharEnd) - Math.max(start, it.globalCharStart),
+      );
     if (overlap > 0) matchedRects.push(it.rect);
   }
   if (matchedRects.length === 0) return null;
@@ -212,4 +221,56 @@ export function spanFromCharRange(
     rects,
     text: text.trim(),
   };
+}
+
+/**
+ * Like `spanFromCharRange`, but returns one TextSpan per page that the
+ * range overlaps.  This is needed for highlights that cross page
+ * boundaries — the UI filters highlights by `pageIndex`, so each page
+ * needs its own span.
+ */
+export function highlightSpansFromCharRange(
+  structure: DocumentStructure,
+  start: number,
+  end: number,
+  idPrefix: string,
+): TextSpan[] {
+  const { pages, pageCharOffsets, fullText } = structure;
+  const startPage = pageForChar(pageCharOffsets, start);
+  const endPage = pageForChar(pageCharOffsets, Math.max(start, end - 1));
+
+  const spans: TextSpan[] = [];
+
+  for (let p = startPage; p <= endPage; p++) {
+    const page = pages[p];
+    if (!page) continue;
+
+    const matchedRects: Rect[] = [];
+    for (const it of page.items) {
+      const overlap =
+        Math.max(
+          0,
+          Math.min(end, it.globalCharEnd) - Math.max(start, it.globalCharStart),
+        );
+      if (overlap > 0) matchedRects.push(it.rect);
+    }
+    if (matchedRects.length === 0) continue;
+
+    const rects = groupRectsIntoLines(matchedRects);
+    const pageStart = pageCharOffsets[p];
+    const pageEnd =
+      p + 1 < pageCharOffsets.length ? pageCharOffsets[p + 1] : fullText.length;
+    const textStart = Math.max(start, pageStart);
+    const textEnd = Math.min(end, pageEnd);
+    const text = fullText.slice(textStart, textEnd);
+
+    spans.push({
+      id: startPage === endPage ? idPrefix : `${idPrefix}-p${p}`,
+      pageIndex: p,
+      rects,
+      text: text.trim(),
+    });
+  }
+
+  return spans;
 }

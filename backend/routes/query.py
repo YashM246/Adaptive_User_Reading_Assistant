@@ -5,6 +5,10 @@ from backend.services.llm import chat
 
 bp = Blueprint('query', __name__)
 
+# Groq on-demand tier can reject requests when input tokens exceed ~8k (TPM / per-request cap).
+# ~18k chars of paper + system + question stays under typical limits (~4–5k tokens paper + overhead).
+MAX_QUERY_PAPER_CHARS = 18_000
+
 
 @bp.route('/api/query', methods=['POST'])
 def query():
@@ -19,11 +23,14 @@ def query():
     if doc is None:
         return jsonify({'error': 'Document not found'}), 404
 
-    paper_chunks = _relevant_chunks(doc, question)
+    full_text = doc.get('full_text', '') or ''
+    truncated = len(full_text) > MAX_QUERY_PAPER_CHARS
+    body_text = full_text[:MAX_QUERY_PAPER_CHARS]
+    if truncated:
+        body_text += '\n\n[... truncated: paper exceeds Groq input-size limit for this request; earlier sections are included.]'
 
-    system = """You are an academic reading assistant. Answer the user's question about the paper.
-Be concise, accurate, and cite specific sections when possible.
-Also provide a confidence score from 0.0 to 1.0.
+    system = """You are an academic reading assistant. The user message includes parsed paper text (may be truncated for length).
+Answer only from that text. Be concise; cite sections when possible. Confidence 0.0–1.0.
 Format:
 ANSWER: <your answer>
 CONFIDENCE: <0.0-1.0>"""
@@ -32,8 +39,8 @@ CONFIDENCE: <0.0-1.0>"""
     title = meta.get('title', 'Unknown')
     user_msg = f"""Paper: {title}
 
-Relevant passages:
-{paper_chunks}
+Full paper text:
+{body_text}
 
 Question: {question}"""
 
@@ -44,24 +51,6 @@ Question: {question}"""
 
     answer, confidence = _parse_response(raw)
     return jsonify({'answer': answer, 'confidence': confidence})
-
-
-def _relevant_chunks(doc: dict, question: str) -> str:
-    q_lower = question.lower()
-    paragraphs = doc.get('paragraphs', [])
-    if not paragraphs:
-        return doc.get('full_text', '')[:6000]
-
-    scored = []
-    for p in paragraphs:
-        text = p.get('text', '')
-        words = q_lower.split()
-        score = sum(1 for w in words if w in text.lower())
-        scored.append((score, text))
-
-    scored.sort(key=lambda x: -x[0])
-    chunks = [t for _, t in scored[:8]]
-    return '\n---\n'.join(chunks)[:6000]
 
 
 def _parse_response(raw: str) -> tuple[str, float]:

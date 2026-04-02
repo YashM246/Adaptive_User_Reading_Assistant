@@ -9,12 +9,10 @@ def create_app() -> Flask:
     app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_SIZE_MB * 1024 * 1024
     CORS(app)
 
-    from backend.routes import parse, reading_path, explain, query, checkpoints, compare, citation
+    from backend.routes import parse, explain, query, compare, citation
     app.register_blueprint(parse.bp)
-    app.register_blueprint(reading_path.bp)
     app.register_blueprint(explain.bp)
     app.register_blueprint(query.bp)
-    app.register_blueprint(checkpoints.bp)
     app.register_blueprint(compare.bp)
     app.register_blueprint(citation.bp)
 

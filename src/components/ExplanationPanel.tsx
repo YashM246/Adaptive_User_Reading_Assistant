@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Markdown from 'react-markdown';
 import type { DocumentStructure } from '../types/aura';
-import { findFirstDefinitionOffset, localContext } from '../lib/structure/checkpoints';
+import { localContext } from '../lib/structure/explanationContext';
 import { api } from '../lib/api/client';
 
 export interface ExplanationPanelProps {
@@ -9,7 +9,6 @@ export interface ExplanationPanelProps {
   selectedText: string | null;
   docId: string | null;
   aiEnabled: boolean;
-  onJumpToChar: (offset: number) => void;
   onClose: () => void;
 }
 
@@ -18,14 +17,12 @@ export function ExplanationPanel({
   selectedText,
   docId,
   aiEnabled,
-  onJumpToChar,
   onClose,
 }: ExplanationPanelProps) {
   const [explanation, setExplanation] = useState<string | null>(null);
   const [confidence, setConfidence] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [definitionTerm, setDefinitionTerm] = useState('');
 
   const [askInput, setAskInput] = useState('');
   const [askAnswer, setAskAnswer] = useState<string | null>(null);
@@ -92,14 +89,6 @@ export function ExplanationPanel({
     setAskError(null);
   }, []);
 
-  const handleDefinitionJump = useCallback(() => {
-    if (!structure) return;
-    const term = definitionTerm.trim() || selectedText?.split(/\s+/).slice(0, 3).join(' ') || '';
-    if (!term) return;
-    const off = findFirstDefinitionOffset(structure.fullText, term);
-    if (off >= 0) onJumpToChar(off);
-  }, [structure, definitionTerm, selectedText, onJumpToChar]);
-
   const truncatedQuote = selectedText
     ? selectedText.length > 120 ? `${selectedText.slice(0, 117)}…` : selectedText
     : '';
@@ -153,27 +142,6 @@ export function ExplanationPanel({
                   <span className="confidence-value">{(confidence * 100).toFixed(0)}%</span>
                 </div>
               )}
-
-              <button type="button" className="definition-link" onClick={handleDefinitionJump}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="9 10 4 15 9 20" />
-                  <path d="M20 4v7a4 4 0 0 1-4 4H4" />
-                </svg>
-                Where is this defined?
-              </button>
-              <p className="definition-hint">
-                Navigates to the nearest prior definition of the selected term within this paper.
-              </p>
-
-              <div className="definition-input-row">
-                <input
-                  type="text"
-                  placeholder="Or search a specific term…"
-                  value={definitionTerm}
-                  onChange={(e) => setDefinitionTerm(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleDefinitionJump(); }}
-                />
-              </div>
             </div>
 
             <button type="button" className="btn-ghost" onClick={onClose} style={{ marginTop: 8 }}>
@@ -186,7 +154,7 @@ export function ExplanationPanel({
       <div className="explanation-panel-ask">
         <span className="ask-section-label">ASK ABOUT THIS PAPER</span>
         <p className="ask-section-desc">
-          Type a question — answers use retrieved passages from this PDF (separate from “Explain this” above).
+          Type a question — answers use parsed text from this PDF (from the start; very long papers may be truncated to fit the model). Separate from “Explain this” above.
         </p>
         <form
           className="ask-form"

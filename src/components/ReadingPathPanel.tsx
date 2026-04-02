@@ -87,7 +87,9 @@ export function ReadingPathPanel({
               <button type="button" className="path-step" onClick={() => onJump(s.span)}>
                 <span className="path-order">{s.order + 1}</span>
                 <div className="path-step-content">
-                  <span className="path-section-title">{s.sectionTitle}</span>
+                  <span className="path-section-title" title={s.sectionTitle}>
+                    {s.sectionTitle}
+                  </span>
                   <span className="path-rationale">{s.rationale}</span>
                 </div>
                 {s.priority === 'high' && <span className="path-priority-dot high" />}

@@ -50,20 +50,6 @@ export interface ParseResponse {
   tables: Array<{ id: string; caption: string }>;
 }
 
-export interface ReadingPathResponse {
-  steps: Array<{
-    section_index: number;
-    section_title: string;
-    priority: 'high' | 'medium' | 'low';
-    rationale: string;
-  }>;
-  missed_important?: Array<{
-    section_index: number;
-    section_title: string;
-    reason: string;
-  }>;
-}
-
 export interface ExplainResponse {
   explanation: string;
   confidence: number;
@@ -97,10 +83,6 @@ export interface CompareResponse {
 export const api = {
   parse(file: File): Promise<ParseResponse> {
     return upload('/api/parse', file);
-  },
-
-  readingPath(docId: string, goal: string, customGoal?: string): Promise<ReadingPathResponse> {
-    return post('/api/reading-path', { doc_id: docId, goal, custom_goal: customGoal });
   },
 
   explain(

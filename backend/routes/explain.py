@@ -6,10 +6,21 @@ from backend.services.llm import chat
 bp = Blueprint('explain', __name__)
 
 MODE_INSTRUCTIONS = {
-    'plain': 'Explain the passage in clear, accessible language for a graduate student.',
-    'eli5': 'Explain the passage as if talking to a curious 10-year-old. Use simple words and analogies.',
+    'plain': (
+        'Audience: graduate students reading research papers. Use clear, direct language—prefer simpler wording '
+        'when it does not sacrifice precision; define or unpack specialized terms briefly when needed. '
+        'Aim for about two paragraphs: enough to clarify the passage and its role in the argument, but not a long essay.'
+    ),
+    'eli5': (
+        'Explain accessibly for a graduate reader who is not yet familiar with this subfield: plain language, '
+        'short definitions where helpful, and intuition or analogies only when they genuinely help—avoid talking down.'
+    ),
     'detailed': 'Give a detailed technical explanation, including any prerequisite concepts needed to fully understand the passage.',
 }
+
+# Plain mode: room for ~two paragraphs without sprawling.
+_PLAIN_MAX_TOKENS = 900
+_DEFAULT_MAX_TOKENS = 2048
 
 
 @bp.route('/api/explain', methods=['POST'])
@@ -31,7 +42,8 @@ def explain():
         abstract = meta.get('abstract', '')[:500]
         paper_context = f'Paper title: {title}\nAbstract: {abstract}\n'
 
-    instruction = MODE_INSTRUCTIONS.get(mode, MODE_INSTRUCTIONS['plain'])
+    resolved_mode = mode if mode in MODE_INSTRUCTIONS else 'plain'
+    instruction = MODE_INSTRUCTIONS[resolved_mode]
 
     system = f"""You are an academic reading assistant embedded inside a PDF reader.
 {instruction}
@@ -47,8 +59,9 @@ Context paragraph:
 Selected passage to explain:
 {selected_text[:2000]}"""
 
+    max_tokens = _PLAIN_MAX_TOKENS if resolved_mode == 'plain' else _DEFAULT_MAX_TOKENS
     try:
-        raw = chat(system, user_msg)
+        raw = chat(system, user_msg, max_tokens=max_tokens)
     except Exception as e:
         return jsonify({'error': f'LLM call failed: {e}'}), 502
 

@@ -207,6 +207,13 @@
   color: var(--accent);
 }
 
+.path-local-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 8px 0 0;
+  line-height: 1.35;
+}
+
 /* ---- AI toggle ---- */
 .ai-toggle {
   display: flex;
@@ -1060,58 +1067,6 @@
   flex-shrink: 0;
   min-width: 28px;
   text-align: right;
-}
-
-/* ---- Definition link ---- */
-.definition-link {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: none;
-  border: none;
-  color: var(--accent);
-  font-size: 12px;
-  font-weight: 600;
-  font-family: var(--font-body);
-  cursor: pointer;
-  padding: 0;
-  transition: opacity 0.15s;
-}
-
-.definition-link:hover {
-  opacity: 0.8;
-}
-
-.definition-link svg {
-  flex-shrink: 0;
-}
-
-.definition-hint {
-  margin: 0;
-  font-size: 10px;
-  color: var(--text-muted);
-  line-height: 1.4;
-}
-
-.definition-input-row {
-  margin-top: 4px;
-}
-
-.definition-input-row input {
-  width: 100%;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--bg-muted);
-  color: var(--text-primary);
-  font-size: 12px;
-  font-family: var(--font-body);
-}
-
-.definition-input-row input:focus {
-  outline: none;
-  border-color: var(--accent);
-  background: var(--bg-panel);
 }
 
 /* ---- Ask about paper (below explanation; independent from Explain this) ---- */

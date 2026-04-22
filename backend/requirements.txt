@@ -2,6 +2,7 @@ flask
 flask-cors
 groq
 papermage
+pdfminer.six
 transformers
 torch
 sentence-transformers

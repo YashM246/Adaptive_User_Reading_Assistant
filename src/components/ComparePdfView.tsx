@@ -5,7 +5,7 @@ import { PdfDocumentView } from './PdfDocumentView';
 import { extractPdfStructure } from '../lib/structure/extractPdfStructure';
 import { api } from '../lib/api/client';
 import type { DocumentStructure } from '../types/aura';
-import type { CompareResponse } from '../lib/api/client';
+import type { CompareResponse, ResolvedReference } from '../lib/api/client';
 
 type Side = 'left' | 'right';
 
@@ -34,10 +34,22 @@ export interface ReaderCompareSeed {
   docId: string | null;
 }
 
+export interface ReferencesState {
+  references: ResolvedReference[];
+  loading: boolean;
+  error: string | null;
+  selectedIndex: number | null;
+  refPdfLoading: boolean;
+}
+
 export interface ComparePdfViewProps {
   aiEnabled: boolean;
   /** When set (e.g. Reader had a PDF open), left pane is filled without re-parsing. */
   initialLeftFromReader?: ReaderCompareSeed | null;
+  /** Called when reference state changes so the parent can render ReferencesPanel. */
+  onReferencesChange?: (state: ReferencesState) => void;
+  /** Called from parent when a reference card is clicked. */
+  onReferenceClickRef?: React.MutableRefObject<((ref: ResolvedReference) => void) | null>;
 }
 
 function ZoomControls({
@@ -83,15 +95,26 @@ function ZoomControls({
   );
 }
 
-export function ComparePdfView({ aiEnabled, initialLeftFromReader = null }: ComparePdfViewProps) {
+export function ComparePdfView({
+  aiEnabled,
+  initialLeftFromReader = null,
+  onReferencesChange,
+  onReferenceClickRef,
+}: ComparePdfViewProps) {
   const [left, setLeft] = useState<SideState>(emptySide);
   const [right, setRight] = useState<SideState>(emptySide);
-  const [zoomLeft, setZoomLeft] = useState(1.0);
-  const [zoomRight, setZoomRight] = useState(1.0);
+  const [zoomLeft, setZoomLeft] = useState(0.6);
+  const [zoomRight, setZoomRight] = useState(0.6);
   const [syncScroll, setSyncScroll] = useState(false);
   const [compareData, setCompareData] = useState<CompareResponse | null>(null);
   const [compareError, setCompareError] = useState<string | null>(null);
   const [compareLoading, setCompareLoading] = useState(false);
+
+  const [references, setReferences] = useState<ResolvedReference[]>([]);
+  const [refsLoading, setRefsLoading] = useState(false);
+  const [refsError, setRefsError] = useState<string | null>(null);
+  const [selectedRefIndex, setSelectedRefIndex] = useState<number | null>(null);
+  const [refPdfLoading, setRefPdfLoading] = useState(false);
 
   const leftScrollRef = useRef<HTMLDivElement>(null);
   const rightScrollRef = useRef<HTMLDivElement>(null);
@@ -109,6 +132,91 @@ export function ComparePdfView({ aiEnabled, initialLeftFromReader = null }: Comp
       loadError: null,
     });
   }, [initialLeftFromReader]);
+
+  // Auto-extract references when left pane has a docId
+  useEffect(() => {
+    if (!left.docId || !aiEnabled) {
+      setReferences([]);
+      setRefsError(null);
+      return;
+    }
+    let cancelled = false;
+    setRefsLoading(true);
+    setRefsError(null);
+    setReferences([]);
+    setSelectedRefIndex(null);
+    api
+      .extractReferences(left.docId)
+      .then((data) => {
+        if (!cancelled) setReferences(data.references);
+      })
+      .catch((e) => {
+        if (!cancelled) setRefsError(e instanceof Error ? e.message : 'Failed to extract references');
+      })
+      .finally(() => {
+        if (!cancelled) setRefsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [left.docId, aiEnabled]);
+
+  // Notify parent of reference state changes
+  useEffect(() => {
+    onReferencesChange?.({
+      references,
+      loading: refsLoading,
+      error: refsError,
+      selectedIndex: selectedRefIndex,
+      refPdfLoading,
+    });
+  }, [references, refsLoading, refsError, selectedRefIndex, refPdfLoading, onReferencesChange]);
+
+  // Handle reference click — fetch PDF and load into right pane
+  const handleReferenceClick = useCallback(
+    async (ref: ResolvedReference) => {
+      if (!ref.paper_id && !ref.open_access_pdf_url) return;
+      setSelectedRefIndex(ref.index);
+      setRefPdfLoading(true);
+      try {
+        const { blob, docId: refDocId } = await api.fetchReferencePdf(
+          ref.paper_id || '',
+          ref.open_access_pdf_url || undefined,
+        );
+        const buffer = await blob.arrayBuffer();
+        const doc = await pdfjsLib.getDocument({ data: buffer }).promise;
+        const struct = await extractPdfStructure(doc);
+        setRight({
+          fileName: ref.title || `Reference [${ref.index + 1}]`,
+          pdf: doc,
+          structure: struct,
+          docId: refDocId,
+          loadState: 'idle',
+          loadError: null,
+        });
+      } catch (e) {
+        setRight({
+          ...emptySide(),
+          loadState: 'error',
+          loadError: e instanceof Error ? e.message : 'Failed to load reference PDF',
+        });
+      } finally {
+        setRefPdfLoading(false);
+        setSelectedRefIndex(null);
+      }
+    },
+    [],
+  );
+
+  // Expose click handler to parent via ref
+  useEffect(() => {
+    if (onReferenceClickRef) {
+      onReferenceClickRef.current = handleReferenceClick;
+    }
+    return () => {
+      if (onReferenceClickRef) {
+        onReferenceClickRef.current = null;
+      }
+    };
+  }, [handleReferenceClick, onReferenceClickRef]);
 
   const syncFrom = useCallback(
     (source: Side) => {
@@ -222,6 +330,7 @@ export function ComparePdfView({ aiEnabled, initialLeftFromReader = null }: Comp
       <div className="compare-toolbar">
         <label className="compare-sync-toggle">
           <input
+            className="toggle-switch"
             type="checkbox"
             checked={syncScroll}
             onChange={(e) => setSyncScroll(e.target.checked)}
@@ -314,7 +423,7 @@ export function ComparePdfView({ aiEnabled, initialLeftFromReader = null }: Comp
           </div>
         </div>
 
-        <div className="compare-pane">
+        <div className="compare-pane" style={{ position: 'relative' }}>
           <div className="compare-pane-header">
             <span className="compare-pane-label">Right</span>
             <div className="compare-pane-header-actions">
@@ -323,7 +432,7 @@ export function ComparePdfView({ aiEnabled, initialLeftFromReader = null }: Comp
                 <input
                   type="file"
                   accept="application/pdf"
-                  disabled={right.loadState === 'loading'}
+                  disabled={right.loadState === 'loading' || refPdfLoading}
                   onChange={(e) => {
                     const f = e.target.files?.[0];
                     if (f) void loadSide('right', f);
@@ -340,6 +449,11 @@ export function ComparePdfView({ aiEnabled, initialLeftFromReader = null }: Comp
             ref={rightScrollRef}
             onScroll={onRightScroll}
           >
+            {refPdfLoading && (
+              <div className="ref-pdf-loading">
+                <div className="ref-spinner" />
+              </div>
+            )}
             {right.pdf && right.structure ? (
               <PdfDocumentView
                 pdf={right.pdf}
@@ -352,7 +466,13 @@ export function ComparePdfView({ aiEnabled, initialLeftFromReader = null }: Comp
               />
             ) : (
               <div className="empty-state compare-empty">
-                <p>{right.loadState === 'loading' ? 'Loading…' : 'Open a PDF for the right pane.'}</p>
+                <p>
+                  {right.loadState === 'loading'
+                    ? 'Loading…'
+                    : refPdfLoading
+                      ? 'Fetching reference PDF…'
+                      : 'Open a PDF or click a reference.'}
+                </p>
               </div>
             )}
           </div>

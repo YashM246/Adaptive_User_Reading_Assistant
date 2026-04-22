@@ -9,12 +9,14 @@ def create_app() -> Flask:
     app.config['MAX_CONTENT_LENGTH'] = MAX_UPLOAD_SIZE_MB * 1024 * 1024
     CORS(app)
 
-    from backend.routes import parse, explain, query, compare, citation
+    from backend.routes import parse, explain, query, compare, citation, references, highlights
     app.register_blueprint(parse.bp)
     app.register_blueprint(explain.bp)
     app.register_blueprint(query.bp)
     app.register_blueprint(compare.bp)
     app.register_blueprint(citation.bp)
+    app.register_blueprint(references.bp)
+    app.register_blueprint(highlights.bp)
 
     @app.route('/api/health')
     def health():

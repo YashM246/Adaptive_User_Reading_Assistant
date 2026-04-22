@@ -280,32 +280,44 @@ function sortSectionsForGoal(
 /* ------------------------------------------------------------------ */
 
 /**
- * Snap the start position forward to a clean paragraph/sentence
- * boundary that is still within the section.  Never snap backward
- * past the section start, which would leak into the previous section.
+ * Snap the start position forward to the beginning of the body text
+ * (past the section title line).  If a `\n\n` or `\n` is found close
+ * to `pos` and still within the section, jump past it so highlights
+ * begin at body content rather than the heading.
  */
 function snapToParagraphStart(
   fullText: string,
   pos: number,
   sectionStart: number,
+  sectionEnd: number,
 ): number {
-  // Don't snap backward past the section start
-  const earliest = sectionStart;
+  // Try to skip past the heading line into body text.
+  // Look FORWARD for the first \n\n (title→body gap).
+  const fwd2 = fullText.indexOf('\n\n', pos);
+  if (fwd2 >= 0 && fwd2 < sectionEnd && fwd2 - pos < 200) {
+    let bodyStart = fwd2 + 2;
+    while (bodyStart < sectionEnd && fullText[bodyStart] === '\n') bodyStart++;
+    if (bodyStart < sectionEnd) return bodyStart;
+  }
 
-  // Try to find a double-newline (paragraph break) near pos
-  const back2 = fullText.lastIndexOf('\n\n', pos);
-  if (back2 >= earliest && pos - back2 < 120) return back2 + 2;
+  // Try single newline forward
+  const fwd1 = fullText.indexOf('\n', pos);
+  if (fwd1 >= 0 && fwd1 < sectionEnd && fwd1 - pos < 120) {
+    const bodyStart = fwd1 + 1;
+    if (bodyStart < sectionEnd) return bodyStart;
+  }
 
-  // Try single newline
-  const back1 = fullText.lastIndexOf('\n', pos - 1);
-  if (back1 >= earliest && pos - back1 < 80) return back1 + 1;
-
-  return Math.max(earliest, pos);
+  return Math.max(sectionStart, pos);
 }
 
 /**
  * Find the end offset after consuming up to `maxParagraphs` paragraph
- * breaks, capped at `maxChars` from start and `sectionEnd`.
+ * breaks (`\n\n`), capped at `maxChars` from start and `sectionEnd`.
+ *
+ * If fewer than `maxParagraphs` breaks exist in the range, extend to
+ * `cap` so the highlight covers the available body text rather than
+ * stopping at the very first paragraph boundary (which would produce
+ * a title-only highlight when the only `\n\n` is the heading→body gap).
  */
 function endAfterParagraphs(
   fullText: string,
@@ -316,16 +328,17 @@ function endAfterParagraphs(
 ): number {
   const cap = Math.min(sectionEnd, start + maxChars);
   let pos = start;
+  let found = 0;
 
   for (let p = 0; p < maxParagraphs; p++) {
     const next = fullText.indexOf('\n\n', pos);
     if (next < 0 || next >= cap) break;
     pos = next + 2;
-    // Skip consecutive newlines
     while (pos < fullText.length && fullText[pos] === '\n') pos++;
+    found++;
   }
 
-  // If we didn't move at all, take up to cap
+  if (found < maxParagraphs) return cap;
   if (pos <= start) return cap;
   return Math.min(pos, cap);
 }
@@ -451,7 +464,7 @@ export function buildReadingPath(
   for (let i = 0; i < ordered.length; i++) {
     const sec = ordered[i];
     const rawStart = sec.startCharGlobal;
-    const start = snapToParagraphStart(fullText, rawStart, sec.startCharGlobal);
+    const start = snapToParagraphStart(fullText, rawStart, sec.startCharGlobal, sec.endCharGlobal);
     const isAbstract = sec.normalizedTitle === 'abstract';
 
     // More generous paragraph/char limits

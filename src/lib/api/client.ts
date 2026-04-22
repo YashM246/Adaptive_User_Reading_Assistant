@@ -80,6 +80,34 @@ export interface CompareResponse {
   differences: CompareDifference[];
 }
 
+export interface ResolvedReference {
+  index: number;
+  raw_text: string;
+  resolved: boolean;
+  paper_id: string | null;
+  title: string | null;
+  authors: string[] | null;
+  year: number | null;
+  abstract: string | null;
+  open_access_pdf_url: string | null;
+  semantic_scholar_url: string | null;
+}
+
+export interface ExtractReferencesResponse {
+  references: ResolvedReference[];
+}
+
+export interface HighlightExcerpt {
+  text: string;
+  section: string;
+  rationale: string;
+  priority: 'high' | 'medium' | 'low';
+}
+
+export interface HighlightsResponse {
+  highlights: HighlightExcerpt[];
+}
+
 export const api = {
   parse(file: File): Promise<ParseResponse> {
     return upload('/api/parse', file);
@@ -113,5 +141,39 @@ export const api = {
       doc_id_right: docIdRight,
       template,
     });
+  },
+
+  extractReferences(docId: string): Promise<ExtractReferencesResponse> {
+    return post('/api/extract-references', { doc_id: docId });
+  },
+
+  getHighlights(
+    docId: string,
+    goal: string,
+    customGoal?: string,
+    clientText?: string,
+  ): Promise<HighlightsResponse> {
+    const body: Record<string, unknown> = { doc_id: docId, goal };
+    if (customGoal) body.custom_goal = customGoal;
+    if (clientText) body.client_text = clientText;
+    return post('/api/highlights', body);
+  },
+
+  async fetchReferencePdf(
+    paperId: string,
+    pdfUrl?: string,
+  ): Promise<{ blob: Blob; docId: string | null }> {
+    const res = await fetch(`${BASE}/api/fetch-reference-pdf`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paper_id: paperId, pdf_url: pdfUrl }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(err.error || `API error ${res.status}`);
+    }
+    const blob = await res.blob();
+    const docId = res.headers.get('X-Doc-Id') || null;
+    return { blob, docId };
   },
 };

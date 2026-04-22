@@ -5,12 +5,16 @@ import { PdfDocumentView } from './components/PdfDocumentView';
 import { ReadingPathPanel } from './components/ReadingPathPanel';
 import { ExplanationPanel } from './components/ExplanationPanel';
 import { ComparePdfView } from './components/ComparePdfView';
+import type { ReferencesState } from './components/ComparePdfView';
+import { ReferencesPanel } from './components/ReferencesPanel';
 import { setupPdfWorker } from './lib/pdf/setup';
 import { buildReadingPath } from './lib/readingPath';
+import { buildLlmReadingPath } from './lib/readingPath/llmPath';
 import { extractPdfStructure } from './lib/structure/extractPdfStructure';
 import { scrollToSpan } from './lib/ui/scrollToSpan';
 import { api } from './lib/api/client';
 import type { ReadingGoal, ReadingPathStep, Rect, TextSpan } from './types/aura';
+import type { ResolvedReference } from './lib/api/client';
 import './App.css';
 
 setupPdfWorker();
@@ -42,8 +46,25 @@ function App() {
   const [pathLoading, setPathLoading] = useState(false);
   const [aiEnabled, setAiEnabled] = useState(true);
   const [backendAvailable, setBackendAvailable] = useState(true);
-  const [zoom, setZoom] = useState(1.0);
+  const [zoom, setZoom] = useState(0.8);
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  const [refsState, setRefsState] = useState<ReferencesState>({
+    references: [],
+    loading: false,
+    error: null,
+    selectedIndex: null,
+    refPdfLoading: false,
+  });
+  const refClickRef = useRef<((ref: ResolvedReference) => void) | null>(null);
+
+  const handleReferencesChange = useCallback((state: ReferencesState) => {
+    setRefsState(state);
+  }, []);
+
+  const handleReferenceClick = useCallback((ref: ResolvedReference) => {
+    refClickRef.current?.(ref);
+  }, []);
 
   const compareSeedFromReader = useMemo(() => {
     if (!pdf || !structure) return null;
@@ -52,21 +73,37 @@ function App() {
 
   useEffect(() => {
     if (!structure) return;
-    if (goal === 'custom' && !customGoalApplied.trim()) {
-      return;
-    }
+    if (goal === 'custom' && !customGoalApplied.trim()) return;
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    let cancelled = false;
     setPathLoading(true);
-    const path = buildReadingPath(
-      structure,
-      goal,
-      goal === 'custom' ? customGoalApplied.trim() : undefined,
-    );
-    setSteps(path.steps);
-    setHighlights(path.highlights);
-    setPathLoading(false);
-  }, [structure, goal, customGoalApplied]);
+
+    const customText = goal === 'custom' ? customGoalApplied.trim() : undefined;
+
+    (async () => {
+      try {
+        if (docId) {
+          const result = await buildLlmReadingPath(structure, docId, goal, customText);
+          if (!cancelled && result.steps.length > 0) {
+            setSteps(result.steps);
+            setHighlights(result.highlights);
+            return;
+          }
+        }
+        throw new Error('fallback');
+      } catch {
+        if (!cancelled) {
+          const path = buildReadingPath(structure, goal, customText);
+          setSteps(path.steps);
+          setHighlights(path.highlights);
+        }
+      } finally {
+        if (!cancelled) setPathLoading(false);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [structure, docId, goal, customGoalApplied]);
 
   const loadPdfFile = useCallback(async (file: File) => {
     setLoadState('loading');
@@ -258,6 +295,7 @@ function App() {
 
             <label className="ai-toggle">
               <input
+                className="toggle-switch"
                 type="checkbox"
                 checked={aiEnabled}
                 onChange={(e) => setAiEnabled(e.target.checked)}
@@ -284,12 +322,23 @@ function App() {
             </p>
             <label className="ai-toggle">
               <input
+                className="toggle-switch"
                 type="checkbox"
                 checked={aiEnabled}
                 onChange={(e) => setAiEnabled(e.target.checked)}
               />
               <span className="ai-toggle-label">AI Assist</span>
             </label>
+
+            {aiEnabled && (
+              <ReferencesPanel
+                references={refsState.references}
+                loading={refsState.loading}
+                error={refsState.error}
+                selectedIndex={refsState.selectedIndex}
+                onReferenceClick={handleReferenceClick}
+              />
+            )}
           </div>
         </aside>
       )}
@@ -393,7 +442,12 @@ function App() {
         </section>
 
         {appView === 'compare' ? (
-          <ComparePdfView aiEnabled={aiEnabled} initialLeftFromReader={compareSeedFromReader} />
+          <ComparePdfView
+            aiEnabled={aiEnabled}
+            initialLeftFromReader={compareSeedFromReader}
+            onReferencesChange={handleReferencesChange}
+            onReferenceClickRef={refClickRef}
+          />
         ) : (
           <>
             {loadState === 'error' && loadError && (
